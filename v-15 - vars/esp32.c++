@@ -37,13 +37,12 @@ bool firebaseInitialized = false;
 // Para evitar reenviar el mismo comando muchas veces
 String ultimoComandoVentilador = "";
 
-// --- ESTRUCTURA PARA LOG OFFLINE ---
-// Guarda lecturas cuando no hay conexión para subirlas después
+// Log OffLine, para cuando no hay conexion
 struct LecturaOffline {
   float tempDHT;
   float humDHT;
   float tempLM35;
-  time_t timestamp;   // Fecha/hora en la que se tomó la lectura
+  time_t timestamp;
 };
 
 const int MAX_LOG_LECTURAS = 50;
@@ -51,14 +50,13 @@ LecturaOffline logLecturas[MAX_LOG_LECTURAS];
 int logLecturasCount = 0;
 
 // --- FUNCIONES AUXILIARES PARA TIEMPO Y LOG ---
-
-// Formatea un time_t a texto "YYYY-MM-DD HH:MM:SS"
+// Formatea un time_t a texto "YYYY-MM-DD HH:MM"
 String formatearTimestamp(time_t t) {
   if (t == 0) return "sin_fecha";
   struct tm localTime;
   localtime_r(&t, &localTime);
   char time[20];
-  strftime(time, sizeof(time), "%Y-%m-%d %H:%M:%S", &localTime);
+  strftime(time, sizeof(time), "%Y-%m-%d %H:%M", &localTime);
   return String(time);
 }
 
@@ -187,8 +185,8 @@ void intentarEnviarLogHistorial() {
 
 }
 
-// Inicializa Firebase y la hora 
-void inicializarFirebaseYHora() {
+// Realiza el inicio de FB
+void inicializarFB() {
   Serial.println("[START] Intentando inicializar");
 
   // Configuracion de RealTime DataBase
@@ -219,7 +217,6 @@ void inicializarFirebaseYHora() {
   }
 }
 
-// --- SETUP ---
 void setup() {
   Serial.begin(115200); 
   Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2); 
@@ -236,7 +233,7 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\n[EXITO] Conectado al WiFi");
 
-    inicializarFirebaseYHora();
+    inicializarFB();
 
   } else {
     Serial.println("\n[FALLO] No se pudo conectar al WiFi");
@@ -280,11 +277,10 @@ void manejarControlVentiladorDesdeRTDB() {
 }
 
 void loop() {
-  // --- Verificacion basica de conectividad ---
+  // Verificacion de conexion [WiFi]
   wl_status_t wifiStatus = WiFi.status();
   bool wifiOK = (wifiStatus == WL_CONNECTED);
 
-  // Reintento controlado de WiFi (cada 10 segundos)
   static bool wifiEstabaOK = false;
 
   if (!wifiOK) {
@@ -298,13 +294,12 @@ void loop() {
       ultimoIntentoWifi = millis();
     }
   } else {
-    // Detectar momento en que vuelve la conexion
+
     if (!wifiEstabaOK) {
       Serial.println("[WiFi] Reconectado correctamente.");
 
-      // Si vuelve a intentar iniciar el WiFi
       if (!firebaseInitialized) {
-        inicializarFirebaseYHora();
+        inicializarFB();
       }
     }
   }
