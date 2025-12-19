@@ -27,7 +27,7 @@ const unsigned long INTERVALO_REINTENTO_WIFI = 10000; // 10 segundos entre inten
 const long GMT_OFFSET_CHILE = -3 * 3600; 
 const int  DAYLIGHT_OFFSET_CHILE = 0;
 
-// LIBRERIAS NECESARIAS
+// LIBRERIAS NECESARIAS 
 FirebaseData fbdo; 
 FirebaseAuth auth; 
 FirebaseConfig config; 
@@ -55,38 +55,38 @@ int logLecturasCount = 0;
 // Formatea un time_t a texto "YYYY-MM-DD HH:MM:SS"
 String formatearTimestamp(time_t t) {
   if (t == 0) return "sin_fecha";
-  struct tm timeinfo;
-  localtime_r(&t, &timeinfo);
-  char buf[20];
-  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  return String(buf);
+  struct tm localTime;
+  localtime_r(&t, &localTime);
+  char time[20];
+  strftime(time, sizeof(time), "%Y-%m-%d %H:%M:%S", &localTime);
+  return String(time);
 }
 
-// Configura la hora NTP usando zona horaria de Chile
+// Configura la hora TIME usando zona horaria de Chile
 void configurarHoraChile() {
   // Configuración de zona horaria (Chile continental UTC-3)
   configTime(GMT_OFFSET_CHILE, DAYLIGHT_OFFSET_CHILE,
              "pool.ntp.org", "time.nist.gov");
 
-  Serial.println("[NTP] Solicitando hora para Chile (UTC-3)...");
+  Serial.println("[TIME] Solicitando hora para Chile...");
   time_t now = 0;
   int reintentos = 0;
 
-  // Esperar hasta 15 seg a que llegue una hora razonable (~año 2023 en adelante)
+  // Esperar hasta 15 seg a que llegue una hora
   do {
     delay(1000);
     now = time(nullptr);
     Serial.print(".");
     reintentos++;
-  } while (now < 1700000000 && reintentos < 15);
+  } while (now < 1735689600 && reintentos < 15);
 
   Serial.println();
 
-  if (now >= 1700000000) {
-    Serial.print("[NTP] Hora sincronizada: ");
+  if (now >= 1735689600) {
+    Serial.print("[TIME] Hora sincronizada: ");
     Serial.println(formatearTimestamp(now));
   } else {
-    Serial.println("[NTP] No se pudo obtener la hora todavía. Se seguirá intentando si es necesario.");
+    Serial.println("[TIME] No se pudo obtener la hora");
   }
 }
 
@@ -106,12 +106,14 @@ void guardarLogOffline(float tempDHT, float humDHT, float tempLM35, time_t ts) {
   logLecturas[logLecturasCount].timestamp = ts;
   logLecturasCount++;
 
-  Serial.print("[LOG] Lectura almacenada offline. Total del log: ");
+  Serial.print("[LOG] Lectura almacenada offline, Cant logs: ");
   Serial.println(logLecturasCount);
 }
 
 // Envía una lectura concreta a Firebase (/lecturas + /historial)
 bool enviarLecturaAFirebase(float tempDHT, float humDHT, float tempLM35, time_t ts) {
+
+  // Validacion del estado de la FB
   if (!firebaseInitialized || !Firebase.ready()) {
     Serial.println("[RTDB] Firebase NO iniciada");
     return false;
@@ -128,7 +130,7 @@ bool enviarLecturaAFirebase(float tempDHT, float humDHT, float tempLM35, time_t 
     Firebase.RTDB.setFloat(&fbdo, "/lecturas/temp_lm35", tempLM35) &&
     Firebase.RTDB.setString(&fbdo, "/lecturas/ultima_actualizacion", timestampStr);
 
-  // Registrar nodo en /historial con push automático
+  // Registrar nodo en /historial con push automatico
   FirebaseJson json;
   json.set("temp_dht", tempDHT);
   json.set("humedad", humDHT);
@@ -147,7 +149,7 @@ bool enviarLecturaAFirebase(float tempDHT, float humDHT, float tempLM35, time_t 
   }
 }
 
-// Intenta vaciar el log offline cuando Firebase está disponible
+// Intenta vaciar el log offline cuando Firebase esta disponible
 void intentarEnviarLogHistorial() {
   if (!firebaseInitialized || !Firebase.ready()) return;
   if (logLecturasCount == 0) return;
@@ -156,9 +158,9 @@ void intentarEnviarLogHistorial() {
   Serial.print(logLecturasCount);
   Serial.println(" lecturas pendientes...");
 
-  int i = 0;
-  while (i < logLecturasCount) {
-    LecturaOffline &lec = logLecturas[i];
+  int indiceLog = 0;
+  while (indiceLog < logLecturasCount) {
+    LecturaOffline &lec = logLecturas[indiceLog];
 
     bool exito = enviarLecturaAFirebase(
       lec.tempDHT,
@@ -168,25 +170,22 @@ void intentarEnviarLogHistorial() {
     );
 
     if (exito) {
-      // Si se envió bien, eliminamos esa lectura del log
-      for (int j = i + 1; j < logLecturasCount; j++) {
-        logLecturas[j - 1] = logLecturas[j];
+      // Si se envio, se eliminan los logs
+      for (int indice = indiceLog + 1; indice < logLecturasCount; indice++) {
+        logLecturas[indice - 1] = logLecturas[indice];
       }
       logLecturasCount--;
     } else {
-      Serial.println("[log] Fallo al enviar una lectura del buffer, se descarta para no bloquear.");
+      Serial.println("[log] Fallo al enviar una lectura del log");
       // La descartamos igual para que el buffer no quede pegado
-      for (int j = i + 1; j < logLecturasCount; j++) {
-        logLecturas[j - 1] = logLecturas[j];
+      for (int indice = indiceLog + 1; indice < logLecturasCount; indice++) {
+        logLecturas[indice - 1] = logLecturas[indice];
       }
       logLecturasCount--;
-      // No incrementamos i porque ya corrimos el array
     }
   }
 
-  Serial.println("[log] Buffer offline vaciado.");
 }
-
 
 // Inicializa Firebase y la hora 
 void inicializarFirebaseYHora() {
@@ -201,21 +200,21 @@ void inicializarFirebaseYHora() {
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true); 
 
-  delay(100); // pequeño margen
+  delay(100);
 
   if (Firebase.ready()) {
     firebaseInitialized = true;
-    Serial.println("[FIREBASE] Inicialización Exitosa.");
+    Serial.println("[FB] Conexion exitosa");
     
     // Señal de vida
     Firebase.RTDB.setString(&fbdo, "/sensores/senal", "ESP32 conectado y listo");
 
-    // Configurar hora por NTP con zona horaria de Chile
+    // Configurar hora por TIME con zona horaria de Chile
     configurarHoraChile();
 
   } else {
     firebaseInitialized = false;
-    Serial.println("[FIREBASE] ERROR en la inicialización o autenticación.");
+    Serial.println("[FB] ERROR.. en la conexion o autenticacion.");
     Serial.println(fbdo.errorReason()); 
   }
 }
@@ -225,14 +224,13 @@ void setup() {
   Serial.begin(115200); 
   Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2); 
 
-  Serial.println("Intentando conectar a WiFi...");
+  Serial.println("Intentando conectar al WiFi");
 
   // Conexión WiFi inicial
   WiFi.begin(ssid, password);
   long startTime = millis();
   while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < 20000) { 
     delay(500);
-    Serial.print(".");
   }
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -244,14 +242,14 @@ void setup() {
     Serial.println("\n[FALLO] No se pudo conectar al WiFi");
   }
   
-  Serial.println("Esperando datos del Arduino...");
+  Serial.println("Esperando datos del Arduino");
 }
 
-// --- Función: leer comando desde Firebase y reenviarlo al Arduino ---
+// --- CONTROL leer comando desde Firebase y mandarlo al Arduino ---
 void manejarControlVentiladorDesdeRTDB() {
   const char* pathCmd = "/control/ventilador_cmd";
 
-  // Leemos SIEMPRE el valor del nodo
+  // Leer SIEMPRE el valor del nodo de control
   if (!Firebase.RTDB.getString(&fbdo, pathCmd)) {
     Serial.print("[CTRL] Error al leer comando RTDB: ");
     Serial.println(fbdo.errorReason());
@@ -261,7 +259,7 @@ void manejarControlVentiladorDesdeRTDB() {
   String cmd = fbdo.to<String>();
   cmd.trim();
 
-  Serial.print("[CTRL] Valor leído en RTDB: '");
+  Serial.print("[CTRL] Valor leido en RTDB: '");
   Serial.print(cmd);
   Serial.println("'");
 
@@ -271,7 +269,7 @@ void manejarControlVentiladorDesdeRTDB() {
 
   // Solo reenviar si el comando cambió
   if (cmd != ultimoComandoVentilador) {
-    Serial.print("[CTRL] Nuevo comando (enviado al Arduino): ");
+    Serial.print("[CTRL] Nuevo comando ");
     Serial.println(cmd);
 
     // El Arduino espera: "VENT_ON", "VENT_OFF" o "VENT_AUTO"
@@ -282,7 +280,7 @@ void manejarControlVentiladorDesdeRTDB() {
 }
 
 void loop() {
-  // --- Verificación básica de conectividad ---
+  // --- Verificacion basica de conectividad ---
   wl_status_t wifiStatus = WiFi.status();
   bool wifiOK = (wifiStatus == WL_CONNECTED);
 
@@ -293,18 +291,18 @@ void loop() {
     if (millis() - ultimoIntentoWifi > INTERVALO_REINTENTO_WIFI) {
       Serial.print("[WiFi] Estado actual: ");
       Serial.println((int)wifiStatus);
-      Serial.println("[WiFi] Conexion perdida, intentando reconectar...");
+      Serial.println("[WiFi] Conexion perdida, intentando nuevamente");
 
-      WiFi.disconnect();              // Cortar intento anterior
-      WiFi.begin(ssid, password);     // Volver a iniciar conexión
+      WiFi.disconnect();
+      WiFi.begin(ssid, password);
       ultimoIntentoWifi = millis();
     }
   } else {
-    // Detectar momento en que vuelve la conexión
+    // Detectar momento en que vuelve la conexion
     if (!wifiEstabaOK) {
       Serial.println("[WiFi] Reconectado correctamente.");
 
-      // Si vuelve el WiFi y Firebase aún no está inicializado, lo inicializamos aquí
+      // Si vuelve a intentar iniciar el WiFi
       if (!firebaseInitialized) {
         inicializarFirebaseYHora();
       }
@@ -342,16 +340,16 @@ void loop() {
         float humDHT = humStr.toFloat();
         float tempLM35 = tempLM35Str.toFloat();
 
-        // Timestamp actual (se basa en la hora NTP ya sincronizada)
+        // Timestamp actual
         time_t ahora = time(nullptr);
 
-        if (ahora < 1700000000) {
+        if (ahora < 1735689600) {
           // Hora aún no sincronizada correctamente
-          Serial.println("[NTP] Advertencia: hora no sincronizada. Se usará 'sin_fecha'.");
+          Serial.println("[TIME] Advertencia: hora no sincronizada. Se usará 'sin_fecha'.");
           ahora = 0;
         }
 
-        // --- IMPRIMIR DATOS (para verificación local) ---
+        // --- Impresion de datos ---
         Serial.println("\n-------------------------------------------");
         Serial.println("📍 Lectura de Sensores Recibida:");
         Serial.printf("🌡 Temp DHT11:  %.2f °C\n", tempDHT); 
@@ -361,14 +359,13 @@ void loop() {
         Serial.println(formatearTimestamp(ahora));
         Serial.println("-------------------------------------------");
 
-        // 3) Decidir qué hacer con la lectura: enviar o guardar offline
         if (firebaseOK) {
           bool exito = enviarLecturaAFirebase(tempDHT, humDHT, tempLM35, ahora);
           if (!exito) {
             guardarLogOffline(tempDHT, humDHT, tempLM35, ahora);
           }
         } else {
-          // Sin conexión o sin Firebase: se almacena en el log para enviarlo más tarde
+          // Si no hay conexion con FB se almacena en el log
           guardarLogOffline(tempDHT, humDHT, tempLM35, ahora);
         }
       }

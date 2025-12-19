@@ -44,16 +44,15 @@ ModoVentilador modoVentilador = MODO_AUTO;
 // Para filtrar lecturas 0 del LM35
 int  ultimaLecturaCrudaLM35 = -1;
 
-// Para detectar cambios de estado y hacer "bip"
+// Para detectar cambios de estado y sonar buzzer
 bool estadoVentiladorAnterior = false;
 
-// Último comando recibido (debug)
+// Ultimo comando recibido (debug)
 String ultimoComandoRecibido = "";
 
-// --------------------------------------------------
-// Enciende/apaga ventilador y LEDs según el estado
-// --------------------------------------------------
+// Enciende/apaga ventilador y LEDs segun el estado
 void aplicarEstadoSalida(bool ventiladorEncendido) {
+
   // Relé
   digitalWrite(RELAY_PIN, ventiladorEncendido ? RELAY_ON : RELAY_OFF);
 
@@ -64,23 +63,19 @@ void aplicarEstadoSalida(bool ventiladorEncendido) {
   digitalWrite(LED_OK_PIN, ventiladorEncendido ? HIGH : LOW);
 }
 
-// --------------------------------------------------
-// Pequeño "chime" con el buzzer cuando cambia de estado
-// --------------------------------------------------
+// Sonido del buzzer
 void beepCambioEstado() {
   const uint16_t notes[] = { 988, 1319, 1568, 2093, 1568, 1319, 988 };
   const uint16_t dur[]   = {  70,   70,   80,   130,  70,   80,  170 };
 
   for (uint8_t i = 0; i < sizeof(notes) / sizeof(notes[0]); i++) {
     tone(BUZZER_PIN, notes[i], dur[i]);
-    delay((int)(dur[i] * 1.3)); // pequeño espacio entre notas
+    delay((int)(dur[i] * 1.3));
     noTone(BUZZER_PIN);
   }
 }
 
-// --------------------------------------------------
-// Devuelve el modo actual como texto (para debug)
-// --------------------------------------------------
+// Estado actual del ventilador 
 const char* textoModo(ModoVentilador m) {
   switch (m) {
     case MODO_AUTO:        return "AUTO";
@@ -90,9 +85,7 @@ const char* textoModo(ModoVentilador m) {
   }
 }
 
-// --------------------------------------------------
 // Procesa comandos enviados por el ESP32 (VENT_ON/OFF/AUTO)
-// --------------------------------------------------
 void procesarComandosDesdeESP32() {
   if (espSerial.available()) {
     String cmd = espSerial.readStringUntil('\n');
@@ -101,9 +94,8 @@ void procesarComandosDesdeESP32() {
 
     ultimoComandoRecibido = cmd;
 
-    Serial.print("[CMD] Recibido desde ESP32: '");
+    Serial.print("[CMD] Recibido desde ESP32: ");
     Serial.print(cmd);
-    Serial.println("'");
 
     cmd.toUpperCase();
 
@@ -117,7 +109,7 @@ void procesarComandosDesdeESP32() {
       modoVentilador = MODO_AUTO;
     }
     else {
-      Serial.println("[CMD] Comando no reconocido, se ignora.");
+      Serial.println("[CMD] Comando desconocido");
     }
 
     Serial.print("[CMD] Modo actual ahora: ");
@@ -125,14 +117,10 @@ void procesarComandosDesdeESP32() {
   }
 }
 
-// --------------------------------------------------
-// SETUP
-// --------------------------------------------------
-void setup() {
-  // Serial para debug por USB
-  Serial.begin(9600);
 
-  // Serial para hablar con el ESP32 (pines 2 y 3)
+void setup() {
+
+  Serial.begin(9600);
   espSerial.begin(9600);
 
   dht.begin();
@@ -146,22 +134,17 @@ void setup() {
 
   aplicarEstadoSalida(false);
   estadoVentiladorAnterior = false;
-  modoVentilador = MODO_AUTO;  // arranca en automático
-
-  Serial.println("=== Arduino listo. Modo inicial: AUTO ===");
+  modoVentilador = MODO_AUTO;  // Modo AUTO por defecto
 }
 
-// --------------------------------------------------
-// LOOP PRINCIPAL
-// --------------------------------------------------
+
 void loop() {
-  // 1) Leer comandos del ESP32 (si los hay)
+  // Leer comandos del ESP32
   procesarComandosDesdeESP32();
 
-  // 2) Leer sensores
   int lecturaCrudaLM35 = analogRead(LM35_PIN);
 
-  // Filtro para lecturas 0 raras del LM35
+  // Filtro para lecturas 0
   if (lecturaCrudaLM35 == 0 && ultimaLecturaCrudaLM35 > 0) {
     lecturaCrudaLM35 = ultimaLecturaCrudaLM35;
   } else if (lecturaCrudaLM35 > 0) {
@@ -173,10 +156,8 @@ void loop() {
   float humDHT   = dht.readHumidity();
   bool  dht_valido = !isnan(tempDHT);
 
-  // 3) Decidir si el ventilador debe ir encendido/apagado
   bool ventiladorEncendido = false;
 
-  // El modo remoto SIEMPRE tiene prioridad sobre la temperatura
   if (modoVentilador == MODO_REMOTO_ON) {
     ventiladorEncendido = true;   // forzado encendido
   }
@@ -184,13 +165,12 @@ void loop() {
     ventiladorEncendido = false;  // forzado apagado
   }
   else {
-    // MODO_AUTO: decide por temperatura
+    // MODO_AUTO decide por temperatura
     bool tempAltaLM35 = (tempLM35 > UMBRAL_TEMPERATURA);
     bool tempAltaDHT  = (dht_valido && (tempDHT > UMBRAL_TEMPERATURA));
     ventiladorEncendido = (tempAltaLM35 || tempAltaDHT);
   }
 
-  // 4) Si cambió el estado del ventilador, "bip" + log
   if (ventiladorEncendido != estadoVentiladorAnterior) {
     beepCambioEstado();
     estadoVentiladorAnterior = ventiladorEncendido;
@@ -201,25 +181,13 @@ void loop() {
     Serial.println(textoModo(modoVentilador));
   }
 
-  // 5) Aplicar cambios al relé y LEDs
   aplicarEstadoSalida(ventiladorEncendido);
 
-  // 6) Enviar datos al ESP32 (por SoftwareSerial, NO por USB)
-  // Formato: tempDHT,humedad,tempLM35
   espSerial.print(tempDHT, 2);
   espSerial.print(",");
   espSerial.print(humDHT, 2);
   espSerial.print(",");
   espSerial.println(tempLM35, 2);
-
-  // Debug local de sensores
-  Serial.print("[DATA] DHT=");
-  Serial.print(tempDHT, 2);
-  Serial.print("C, HUM=");
-  Serial.print(humDHT, 2);
-  Serial.print("%, LM35=");
-  Serial.print(tempLM35, 2);
-  Serial.println("C");
 
   delay(2000);
 }
